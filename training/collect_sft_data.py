@@ -50,11 +50,18 @@ if _PROJECT_ROOT not in sys.path:
 # Difficulty distribution
 # ---------------------------------------------------------------------------
 
-# 40% easy, 35% medium, 25% hard (per training plan)
+# Spread across 7 difficulty levels for much more diverse data.
+# Previously only 3 levels (0.2, 0.5, 0.8) caused near-identical episodes
+# within each tier. More levels = more varied passenger counts, constraint
+# densities, capacity scarcity, and adversarial patterns.
 DIFFICULTY_SCHEDULE = [
-    (0.2, 0.40),   # easy
-    (0.5, 0.35),   # medium
-    (0.8, 0.25),   # hard
+    (0.15, 0.12),   # very easy
+    (0.25, 0.13),   # easy
+    (0.35, 0.13),   # easy-medium
+    (0.50, 0.15),   # medium
+    (0.60, 0.15),   # medium-hard
+    (0.75, 0.17),   # hard
+    (0.90, 0.15),   # very hard
 ]
 
 
@@ -132,7 +139,7 @@ def _collect_one_episode(args: tuple) -> dict:
 # ---------------------------------------------------------------------------
 
 def collect_episodes(
-    n_episodes: int = 1000,
+    n_episodes: int = 3000,
     output_dir: str = "data/sft_episodes",
     n_workers: int = 1,
     start_seed: int = 1,
@@ -142,12 +149,13 @@ def collect_episodes(
     Collect expert trajectories and save as individual JSON files.
 
     Args:
-        n_episodes: Total number of episodes to collect.
+        n_episodes: Total number of episodes to collect (default raised to
+                    3000 for better coverage across 7 difficulty levels).
         output_dir: Directory for episode JSON files.
         n_workers: Number of parallel workers (1 = sequential).
         start_seed: Starting seed number.
-        include_suboptimal: If True, include episodes with score 0.5-0.8
-                           (for data augmentation per training plan).
+        include_suboptimal: If True, include episodes with score 0.4-0.7
+                           (for data augmentation / diversity).
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -209,22 +217,30 @@ def _process_result(
     score = result.get("score", 0.0)
     seed = result["seed"]
 
-    # Quality filtering per training plan:
-    # - Primary: score >= 0.8 (expert-quality)
-    # - Augmentation: score 0.5-0.8 (suboptimal, for diversity)
-    min_score = 0.5 if include_suboptimal else 0.8
+    # Quality filtering:
+    # - Primary: score >= 0.7 (good quality)
+    # - Suboptimal: score 0.4-0.7 (for diversity — model sees imperfect outcomes)
+    min_score = 0.4 if include_suboptimal else 0.7
     if score < min_score:
         stats["skipped"] += 1
         return
 
+    # Tag quality tier so we can weight during training
+    if score >= 0.85:
+        quality = "expert"
+    elif score >= 0.7:
+        quality = "good"
+    else:
+        quality = "suboptimal"
+
     # Save episode
     filepath = os.path.join(output_dir, f"episode_{seed:06d}.json")
-    # Remove tool_result from turns to save space (observation_text has the info)
     save_data = {
         "task_id": result["task_id"],
         "seed": seed,
         "difficulty": result["difficulty"],
         "score": round(score, 4),
+        "quality": quality,
         "cumulative_reward": round(result["cumulative_reward"], 4),
         "n_steps": result["n_steps"],
         "n_passengers": result["n_passengers"],
@@ -321,8 +337,8 @@ def main():
         description="Collect expert trajectories for SFT training"
     )
     parser.add_argument(
-        "--n_episodes", type=int, default=1000,
-        help="Number of episodes to collect (default: 1000)",
+        "--n_episodes", type=int, default=3000,
+        help="Number of episodes to collect (default: 3000)",
     )
     parser.add_argument(
         "--output_dir", type=str, default="data/sft_episodes",

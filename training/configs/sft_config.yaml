@@ -2,6 +2,14 @@
 # ===========================
 # Phase 1: Supervised Fine-Tuning on expert trajectories
 #
+# Key changes from v1:
+#   - 1 epoch (was 3): model memorized after ~300 samples at 3 epochs
+#   - Lower LoRA rank 16 (was 32): reduces memorization capacity
+#   - 5 target modules (was 7): dropped gate_proj/up_proj to reduce params
+#   - Added weight_decay for regularization
+#   - Added eval_strategy for monitoring overfitting
+#   - Increased max_length to 8192: reasoning + JSON is longer now
+#
 # Usage:
 #   python -m training.train_sft --config training/configs/sft_config.yaml
 
@@ -10,31 +18,35 @@ model_name: "Qwen/Qwen2.5-7B-Instruct"
 dataset_dir: "training/sft_dataset"
 output_dir: "/app/checkpoints/sft"
 
-# LoRA
-lora_r: 32
-lora_alpha: 64
-lora_dropout: 0.05
+# LoRA — reduced capacity to avoid memorization
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.10
 lora_target_modules:
   - "q_proj"
   - "k_proj"
   - "v_proj"
   - "o_proj"
-  - "gate_proj"
-  - "up_proj"
   - "down_proj"
 
 # Training
-num_train_epochs: 3
+num_train_epochs: 1
 per_device_train_batch_size: 2
 gradient_accumulation_steps: 8        # effective batch size = 16
-learning_rate: 1.0e-4                 # higher LR for LoRA
-warmup_ratio: 0.05
+learning_rate: 5.0e-5                 # lower LR (was 1e-4)
+warmup_ratio: 0.10                    # longer warmup (was 0.05)
+weight_decay: 0.05                    # regularization (was 0)
 bf16: true
 gradient_checkpointing: true
-max_length: 4096                      # multi-turn episodes can be long
+max_length: 8192                      # longer for reasoning+JSON (was 4096)
 logging_steps: 10
-save_strategy: "epoch"
+save_strategy: "steps"
+save_steps: 100
+
+# Eval
+eval_strategy: "steps"
+eval_steps: 100
 
 # SFT-specific
-assistant_only_loss: true             # only train on tool-call tokens
+assistant_only_loss: true             # only train on reasoning+tool-call tokens
 packing: false                        # don't pack — episodes are multi-turn

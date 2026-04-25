@@ -34,26 +34,29 @@ DEFAULTS = {
     "dataset_repo": "Shreya1911/flight-rebooking-sft-data",
     "output_dir": "/app/checkpoints/sft",
 
-    # LoRA
-    "lora_r": 32,
-    "lora_alpha": 64,
-    "lora_dropout": 0.05,
+    # LoRA — reduced capacity to prevent memorization
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.10,
     "lora_target_modules": [
-        "q_proj", "k_proj", "v_proj", "o_proj",
-        "gate_proj", "up_proj", "down_proj",
+        "q_proj", "k_proj", "v_proj", "o_proj", "down_proj",
     ],
 
-    # Training
-    "num_train_epochs": 3,
+    # Training — 1 epoch only, lower LR, regularization
+    "num_train_epochs": 1,
     "per_device_train_batch_size": 2,
     "gradient_accumulation_steps": 8,
-    "learning_rate": 1e-4,
-    "warmup_ratio": 0.05,
+    "learning_rate": 5e-5,
+    "warmup_ratio": 0.10,
+    "weight_decay": 0.05,
     "bf16": True,
     "gradient_checkpointing": True,
-    "max_length": 4096,
+    "max_length": 8192,
     "logging_steps": 10,
-    "save_strategy": "epoch",
+    "save_strategy": "steps",
+    "save_steps": 100,
+    "eval_strategy": "steps",
+    "eval_steps": 100,
     "assistant_only_loss": True,
     "packing": False,
 }
@@ -75,37 +78,47 @@ def load_config(config_path: str | None) -> dict:
 
 def train(config: dict) -> None:
     """Run SFT training."""
-    from datasets import load_from_disk,load_dataset
+    from datasets import load_from_disk, load_dataset, DatasetDict
     from peft import LoraConfig
     from trl import SFTConfig, SFTTrainer
 
-    # Load dataset
-    dataset_dir = config["dataset_dir"]
-    print(f"Loading dataset from {dataset_dir}...")
-    from huggingface_hub import login
-    import os
     # Fix cache permission error - point to writable directory
     os.environ["HF_HOME"] = "/app/hf_cache"
     os.environ["TRANSFORMERS_CACHE"] = "/app/hf_cache"
-    #os.makedirs("/app/hf_cache", exist_ok=True)
 
     # Login without saving token to disk
     hf_token = os.environ.get("HF_TOKEN")
     if hf_token:
-        #login(token=hf_token, add_to_git_credential=False)
         os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
         os.environ["HF_TOKEN"] = hf_token
-    # Load dataset from HF Hub if dataset_repo is set, else fall back to local
+
+    # Load dataset — try HF Hub first, then local disk
+    train_dataset = None
+    eval_dataset = None
+
     if config.get("dataset_repo"):
         print(f"Loading dataset from HF Hub: {config['dataset_repo']}")
-        dataset = load_dataset(config["dataset_repo"], split="train")
+        loaded = load_dataset(config["dataset_repo"])
+        if isinstance(loaded, DatasetDict):
+            train_dataset = loaded.get("train", loaded[list(loaded.keys())[0]])
+            eval_dataset = loaded.get("eval") or loaded.get("test")
+        else:
+            train_dataset = loaded
     else:
-        print(f"Loading dataset from disk: {config['dataset_dir']}")
-        dataset = load_from_disk(config["dataset_dir"])
+        dataset_dir = config["dataset_dir"]
+        print(f"Loading dataset from disk: {dataset_dir}")
+        loaded = load_from_disk(dataset_dir)
+        if isinstance(loaded, DatasetDict):
+            train_dataset = loaded.get("train", loaded[list(loaded.keys())[0]])
+            eval_dataset = loaded.get("eval") or loaded.get("test")
+        else:
+            train_dataset = loaded
 
-    print(f"  Dataset: {dataset}")
-    print(f"  Records: {len(dataset)}")
-    print(f"  Dataset: {dataset}")
+    print(f"  Train records: {len(train_dataset)}")
+    if eval_dataset is not None:
+        print(f"  Eval records: {len(eval_dataset)}")
+    else:
+        print(f"  Eval: none (no eval split found)")
 
     # LoRA config
     peft_config = LoraConfig(
@@ -116,14 +129,15 @@ def train(config: dict) -> None:
         task_type="CAUSAL_LM",
     )
 
-    # SFT training arguments
-    training_args = SFTConfig(
+    # Build SFT training arguments
+    sft_kwargs = dict(
         output_dir=config["output_dir"],
         num_train_epochs=config["num_train_epochs"],
         per_device_train_batch_size=config["per_device_train_batch_size"],
         gradient_accumulation_steps=config["gradient_accumulation_steps"],
         learning_rate=config["learning_rate"],
         warmup_ratio=config["warmup_ratio"],
+        weight_decay=config.get("weight_decay", 0.0),
         bf16=config["bf16"],
         gradient_checkpointing=config["gradient_checkpointing"],
         logging_steps=config["logging_steps"],
@@ -135,22 +149,40 @@ def train(config: dict) -> None:
         packing=config["packing"],
 
         # Misc
-        report_to="none",  # Change to "wandb" if you use W&B
+        report_to="none",
         remove_unused_columns=False,
         dataloader_pin_memory=True,
-        # ADD THESE THREE LINES:
         push_to_hub=True,
         hub_model_id="Shreya1911/flight-rebooking-sft",
         hub_strategy="every_save",
     )
 
+    # Add save_steps if strategy is "steps"
+    if config.get("save_strategy") == "steps" and config.get("save_steps"):
+        sft_kwargs["save_steps"] = config["save_steps"]
+
+    # Add eval config if we have an eval split
+    if eval_dataset is not None:
+        sft_kwargs["eval_strategy"] = config.get("eval_strategy", "steps")
+        eval_steps = config.get("eval_steps", 100)
+        sft_kwargs["eval_steps"] = eval_steps
+        sft_kwargs["per_device_eval_batch_size"] = config.get(
+            "per_device_eval_batch_size",
+            config["per_device_train_batch_size"],
+        )
+
+    training_args = SFTConfig(**sft_kwargs)
+
     # Create trainer
     print(f"\nInitializing SFTTrainer...")
     print(f"  Model: {config['model_name']}")
-    print(f"  LoRA: r={config['lora_r']}, alpha={config['lora_alpha']}")
+    print(f"  LoRA: r={config['lora_r']}, alpha={config['lora_alpha']}, "
+          f"dropout={config['lora_dropout']}")
+    print(f"  Targets: {config['lora_target_modules']}")
     print(f"  Epochs: {config['num_train_epochs']}")
     print(f"  Batch size (effective): "
           f"{config['per_device_train_batch_size'] * config['gradient_accumulation_steps']}")
+    print(f"  LR: {config['learning_rate']}, weight_decay: {config.get('weight_decay', 0)}")
     print(f"  Max length: {config['max_length']}")
     print(f"  Assistant-only loss: {config['assistant_only_loss']}")
 
@@ -161,14 +193,18 @@ def train(config: dict) -> None:
             if logs:
                 print(f"Step {state.global_step}: {logs}", flush=True)
                 sys.stdout.flush()
-    
-    trainer = SFTTrainer(
+
+    trainer_kwargs = dict(
         model=config["model_name"],
         args=training_args,
-        train_dataset=dataset,
+        train_dataset=train_dataset,
         peft_config=peft_config,
         callbacks=[LogCallback()],
     )
+    if eval_dataset is not None:
+        trainer_kwargs["eval_dataset"] = eval_dataset
+
+    trainer = SFTTrainer(**trainer_kwargs)
 
     # Train
     print(f"\nStarting training...")

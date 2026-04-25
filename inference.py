@@ -242,26 +242,71 @@ def format_result(item: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def parse_llm_response(response_text: str) -> Optional[dict]:
-    """Parse LLM response into a tool call dict. Returns None on failure."""
+    """
+    Parse LLM response into a tool call dict. Returns None on failure.
+
+    Handles two formats:
+      1. Bare JSON: {"tool_name": "...", "args": {...}}
+      2. Reasoning + JSON: "Some reasoning text\n{"tool_name": "...", "args": {...}}"
+
+    The model is trained with chain-of-thought reasoning before the JSON action,
+    so we need to find the JSON object even when preceded by reasoning text.
+    """
     text = response_text.strip()
 
+    # Strip markdown code fences
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
 
+    # Try 1: the whole text is valid JSON
     try:
         parsed = json.loads(text)
         if "tool_name" in parsed and "args" in parsed:
             return parsed
-        return None
     except json.JSONDecodeError:
-        match = re.search(r'\{[^{}]*"tool_name"[^{}]*\}', text)
-        if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError:
-                return None
-        return None
+        pass
+
+    # Try 2: find the last JSON object containing "tool_name"
+    # (reasoning text comes before; the action JSON comes last)
+    matches = list(re.finditer(
+        r'\{[^{}]*"tool_name"\s*:\s*"[^"]+"\s*,\s*"args"\s*:\s*\{[^{}]*\}[^{}]*\}',
+        text,
+    ))
+    if matches:
+        try:
+            return json.loads(matches[-1].group())
+        except json.JSONDecodeError:
+            pass
+
+    # Try 3: find any JSON object with "tool_name" (simpler pattern)
+    match = re.search(r'\{[^{}]*"tool_name"[^{}]*\}', text)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+
+    # Try 4: find nested JSON (args may contain nested objects)
+    # Scan for opening brace before "tool_name" and find matching close
+    idx = text.find('"tool_name"')
+    if idx >= 0:
+        # Walk backwards to find opening brace
+        start = text.rfind('{', 0, idx)
+        if start >= 0:
+            depth = 0
+            for end in range(start, len(text)):
+                if text[end] == '{':
+                    depth += 1
+                elif text[end] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[start:end + 1])
+                        except json.JSONDecodeError:
+                            break
+
+    return None
 
 
 # ---------------------------------------------------------------------------
