@@ -1,0 +1,9 @@
+{
+    "task_id": "medium",
+    "max_steps": 35,
+    "cancelled_flight": "FL-100",
+    "destination": "DEL",
+    "compensation_budget": 4000,
+    "difficulty": 0.5,
+    "events_enabled": false
+}

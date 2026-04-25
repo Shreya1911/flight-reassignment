@@ -1,0 +1,84 @@
+{
+    "flights": [
+        {
+            "flight_id": "FL-201",
+            "departure_time": "08:00",
+            "arrival_time": "11:00",
+            "cabin_availability": {
+                "economy": 7,
+                "premium_economy": 3,
+                "business": 3
+            },
+            "seat_features": {
+                "economy": {"window": 2, "legroom": 2},
+                "premium_economy": {"window": 1, "legroom": 1},
+                "business": {"window": 1, "legroom": 3}
+            },
+            "supports_ssr": ["UM", "WCHR", "pet_cabin"]
+        },
+        {
+            "flight_id": "FL-202",
+            "departure_time": "10:00",
+            "arrival_time": "13:00",
+            "cabin_availability": {
+                "economy": 6,
+                "premium_economy": 2,
+                "business": 2
+            },
+            "seat_features": {
+                "economy": {"window": 2, "legroom": 1},
+                "premium_economy": {"window": 1, "legroom": 1},
+                "business": {"window": 1, "legroom": 2}
+            },
+            "supports_ssr": ["WCHR", "pet_cargo"]
+        },
+        {
+            "flight_id": "FL-203",
+            "departure_time": "12:00",
+            "arrival_time": "15:00",
+            "cabin_availability": {
+                "economy": 5,
+                "premium_economy": 2,
+                "business": 2
+            },
+            "seat_features": {
+                "economy": {"window": 2, "legroom": 1},
+                "premium_economy": {"window": 1, "legroom": 1},
+                "business": {"window": 1, "legroom": 2}
+            },
+            "supports_ssr": ["UM", "pet_cabin"]
+        },
+        {
+            "flight_id": "FL-204",
+            "departure_time": "14:00",
+            "arrival_time": "17:00",
+            "cabin_availability": {
+                "economy": 3,
+                "premium_economy": 1,
+                "business": 1
+            },
+            "seat_features": {
+                "economy": {"window": 1, "legroom": 1},
+                "premium_economy": {"window": 1, "legroom": 1},
+                "business": {"window": 1, "legroom": 1}
+            },
+            "supports_ssr": ["WCHR", "pet_cargo"]
+        },
+        {
+            "flight_id": "FL-205",
+            "departure_time": "16:00",
+            "arrival_time": "19:00",
+            "cabin_availability": {
+                "economy": 2,
+                "premium_economy": 1,
+                "business": 1
+            },
+            "seat_features": {
+                "economy": {"window": 1, "legroom": 0},
+                "premium_economy": {"window": 0, "legroom": 1},
+                "business": {"window": 1, "legroom": 1}
+            },
+            "supports_ssr": ["UM"]
+        }
+    ]
+}

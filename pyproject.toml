@@ -1,0 +1,47 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flight_rebooking"
+version = "0.1.0"
+description = "Flight Rebooking Inference environment for OpenEnv"
+requires-python = ">=3.10,<4.0"
+dependencies = [
+    # Core OpenEnv runtime (provides FastAPI server + HTTP client types)
+    # install from github
+    # "openenv-core[core] @ git+https://github.com/meta-pytorch/OpenEnv.git",
+    "huggingface-hub>=1.9.0",
+    "openenv-core[core]>=0.2.3",
+    # Inference script dependencies
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.24.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+# Server entry point - enables running via: uv run --project . server
+# or: python -m seat_reassignment.server.app
+server = "flight_rebooking.server.app:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["flight_rebooking", "flight_rebooking.server"]
+package-dir = { "flight_rebooking" = ".", "flight_rebooking.server" = "server" }
+
+[tool.setuptools.package-data]
+flight_rebooking = ["data/**/*.json"]

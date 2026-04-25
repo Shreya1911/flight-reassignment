@@ -1,0 +1,8 @@
+spec_version: 1
+name: flight_rebooking
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+version: "1.0.0"
+description: An environment for managing airline flight rebooking after cancellation.

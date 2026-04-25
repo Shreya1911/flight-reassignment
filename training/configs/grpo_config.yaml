@@ -1,0 +1,51 @@
+# GRPO Training Configuration
+# ============================
+# Phase 2: Group Relative Policy Optimization
+# Reinforces SFT model against the live environment
+#
+# Usage:
+#   python -m training.train_grpo --config training/configs/grpo_config.yaml
+
+# Model (start from SFT checkpoint, not base model)
+model_name: "checkpoints/sft/final"
+dataset_dir: "training/grpo_prompts"
+output_dir: "checkpoints/grpo"
+
+# LoRA (smaller rank to reduce overfitting during RL)
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_modules:
+  - "q_proj"
+  - "k_proj"
+  - "v_proj"
+  - "o_proj"
+
+# Training
+num_train_epochs: 2
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 16       # effective batch size = 16
+learning_rate: 5.0e-7                 # very low to avoid forgetting SFT knowledge
+warmup_ratio: 0.05
+bf16: true
+gradient_checkpointing: true
+
+# Logging
+logging_steps: 5
+save_strategy: "steps"
+save_steps: 200
+log_completions: true                 # log sample completions for debugging
+
+# GRPO algorithm
+num_generations: 4                    # 4 completions per prompt for advantage estimation
+max_completion_length: 4096           # full episode can be long
+beta: 0.0                            # no KL penalty (clipping prevents collapse)
+scale_rewards: true                   # normalize rewards within each group
+
+# Reward weights
+grader_reward_weight: 1.0             # primary signal: environment grader score
+efficiency_reward_weight: 0.5         # secondary: step efficiency bonus
+
+# vLLM acceleration (enable if vLLM is installed)
+use_vllm: false
+# vllm_mode: "colocate"
