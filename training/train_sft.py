@@ -154,11 +154,20 @@ def train(config: dict) -> None:
     print(f"  Max length: {config['max_length']}")
     print(f"  Assistant-only loss: {config['assistant_only_loss']}")
 
+    from transformers import TrainerCallback
+
+    class LogCallback(TrainerCallback):
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            if logs:
+                print(f"Step {state.global_step}: {logs}", flush=True)
+                sys.stdout.flush()
+    
     trainer = SFTTrainer(
         model=config["model_name"],
         args=training_args,
         train_dataset=dataset,
         peft_config=peft_config,
+        callbacks=[LogCallback()],
     )
 
     # Train
