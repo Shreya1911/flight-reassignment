@@ -31,6 +31,7 @@ if _PROJECT_ROOT not in sys.path:
 DEFAULTS = {
     "model_name": "Qwen/Qwen2.5-7B-Instruct",
     "dataset_dir": "training/sft_dataset",
+    "dataset_repo": "Shreya1911/flight-rebooking-sft-data",
     "output_dir": "checkpoints/sft",
 
     # LoRA
@@ -74,14 +75,31 @@ def load_config(config_path: str | None) -> dict:
 
 def train(config: dict) -> None:
     """Run SFT training."""
-    from datasets import load_from_disk
+    from datasets import load_from_disk,load_dataset
     from peft import LoraConfig
     from trl import SFTConfig, SFTTrainer
 
     # Load dataset
     dataset_dir = config["dataset_dir"]
     print(f"Loading dataset from {dataset_dir}...")
-    dataset = load_from_disk(dataset_dir)
+    from huggingface_hub import login
+    import os
+
+    # Login to HF (uses HF_TOKEN env variable set in Space secrets)
+    hf_token = os.environ.get("HF_TOKEN")
+    if hf_token:
+        login(token=hf_token)
+
+    # Load dataset from HF Hub if dataset_repo is set, else fall back to local
+    if config.get("dataset_repo"):
+        print(f"Loading dataset from HF Hub: {config['dataset_repo']}")
+        dataset = load_dataset(config["dataset_repo"], split="train")
+    else:
+        print(f"Loading dataset from disk: {config['dataset_dir']}")
+        dataset = load_from_disk(config["dataset_dir"])
+
+    print(f"  Dataset: {dataset}")
+    print(f"  Records: {len(dataset)}")
     print(f"  Dataset: {dataset}")
 
     # LoRA config
@@ -166,6 +184,7 @@ def main():
     # Allow CLI overrides for common params
     parser.add_argument("--model_name", type=str, default=None)
     parser.add_argument("--dataset_dir", type=str, default=None)
+    parser.add_argument("--dataset_repo", type=str, default=None)
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--num_train_epochs", type=int, default=None)
     parser.add_argument("--learning_rate", type=float, default=None)
@@ -177,7 +196,7 @@ def main():
     # Load config, then apply CLI overrides
     config = load_config(args.config)
     for key in ["model_name", "dataset_dir", "output_dir", "num_train_epochs",
-                 "learning_rate", "max_length", "lora_r"]:
+                 "learning_rate", "max_length", "lora_r","dataset_repo"]:
         val = getattr(args, key, None)
         if val is not None:
             config[key] = val
