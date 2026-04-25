@@ -84,12 +84,15 @@ def train(config: dict) -> None:
     print(f"Loading dataset from {dataset_dir}...")
     from huggingface_hub import login
     import os
+    # Fix cache permission error - point to writable directory
+    os.environ["HF_HOME"] = "/app/hf_cache"
+    os.environ["TRANSFORMERS_CACHE"] = "/app/hf_cache"
+    os.makedirs("/app/hf_cache", exist_ok=True)
 
-    # Login to HF (uses HF_TOKEN env variable set in Space secrets)
+    # Login without saving token to disk
     hf_token = os.environ.get("HF_TOKEN")
     if hf_token:
-        login(token=hf_token)
-
+        login(token=hf_token, add_to_git_credential=False)
     # Load dataset from HF Hub if dataset_repo is set, else fall back to local
     if config.get("dataset_repo"):
         print(f"Loading dataset from HF Hub: {config['dataset_repo']}")
