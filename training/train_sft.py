@@ -32,7 +32,7 @@ DEFAULTS = {
     "model_name": "Qwen/Qwen2.5-7B-Instruct",
     "dataset_dir": "training/sft_dataset",
     "dataset_repo": "Shreya1911/flight-rebooking-sft-data",
-    "output_dir": "checkpoints/sft",
+    "output_dir": "/app/checkpoints/sft",
 
     # LoRA
     "lora_r": 32,
