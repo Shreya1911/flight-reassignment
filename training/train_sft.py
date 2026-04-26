@@ -29,7 +29,7 @@ if _PROJECT_ROOT not in sys.path:
 # ---------------------------------------------------------------------------
 
 DEFAULTS = {
-    "model_name": "Qwen/Qwen2.5-3B",
+    "model_name": "Qwen/Qwen3-4B-Instruct-2507",
     "dataset_dir": "training/sft_dataset",
     "dataset_repo": "Shreya1911/flight-rebooking-sft-data_v2",
     "output_dir": "/app/checkpoints/sft",
