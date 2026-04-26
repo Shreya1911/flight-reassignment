@@ -54,10 +54,10 @@ DEFAULTS = {
 
     # GRPO-specific
     "num_generations": 4,
-    "max_completion_length": 4096,
+    "max_completion_length": 12288,
     "beta": 0.0,
     "scale_rewards": True,
-    "log_completions": True,
+    "log_completions": False,
 
     # Reward weights
     "grader_reward_weight": 1.0,

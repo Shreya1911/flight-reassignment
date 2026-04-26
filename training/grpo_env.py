@@ -190,10 +190,25 @@ class FlightRebookingGRPOEnv:
         self._obs = obs
         self.reward += obs.reward
 
+        # Log tool call and result summary
+        status = obs.tool_result.get("status", "") if obs.tool_result else ""
+        args_short = json.dumps(args, separators=(",", ":")) if args else "{}"
+        print(
+            f"  [ENV] step={obs.step_count} tool={tool_name}({args_short}) "
+            f"status={status} reward={obs.reward:.2f} "
+            f"booked={obs.passengers_booked}/{obs.passengers_total}",
+            flush=True,
+        )
+
         if obs.done:
             self._done = True
             if obs.tool_result and "grader_score" in obs.tool_result:
                 self.grader_score = obs.tool_result["grader_score"]
+                print(
+                    f"  [ENV] EPISODE DONE — grader_score={self.grader_score:.4f} "
+                    f"total_reward={self.reward:.2f}",
+                    flush=True,
+                )
 
         return self._format_result(obs)
 

@@ -32,14 +32,14 @@ bf16: true
 gradient_checkpointing: true
 
 # Logging
-logging_steps: 5
+logging_steps: 1
 save_strategy: "steps"
 save_steps: 200
-log_completions: true                 # log sample completions for debugging
+log_completions: false                # set true to debug what model generates
 
 # GRPO algorithm
-num_generations: 4                    # 4 completions per prompt for advantage estimation
-max_completion_length: 4096           # full episode can be long
+num_generations: 2                    # 4 completions per prompt for advantage estimation
+max_completion_length: 12288          # full episode needs ~10K tokens (24 pax × ~365 tok/turn)
 beta: 0.0                            # no KL penalty (clipping prevents collapse)
 scale_rewards: true                   # normalize rewards within each group
 
