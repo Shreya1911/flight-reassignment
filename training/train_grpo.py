@@ -44,7 +44,7 @@ DEFAULTS = {
     "num_train_epochs": 2,
     "per_device_train_batch_size": 1,
     "gradient_accumulation_steps": 16,
-    "learning_rate": 5e-7,
+    "learning_rate": 5e-6,
     "warmup_steps": 20,
     "bf16": True,
     "gradient_checkpointing": True,
@@ -168,8 +168,10 @@ def train(config: dict) -> None:
             config["efficiency_reward_weight"],
         ],
 
-        # Misc
-        report_to="none",
+        # Tracking
+        report_to=config.get("report_to", "none"),
+        project=config.get("trackio_project", "flight-rebooking-grpo"),
+        run_name=config.get("trackio_run_name", None),
     )
 
     # Reward functions

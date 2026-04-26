@@ -50,3 +50,8 @@ eval_steps: 100
 # SFT-specific — plain text format with explicit role delimiters
 dataset_text_field: "text"            # each row has a "text" field (not "messages")
 packing: false                        # don't pack — episodes are multi-turn
+
+# Experiment tracking (trackio)
+report_to: "trackio"
+trackio_project: "flight-rebooking-sft"
+# trackio_run_name: "run-1"            # auto-generated if omitted

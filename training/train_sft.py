@@ -150,8 +150,10 @@ def train(config: dict) -> None:
         dataset_text_field=config.get("dataset_text_field", "text"),
         packing=config["packing"],
 
-        # Misc
-        report_to="none",
+        # Tracking
+        report_to=config.get("report_to", "none"),
+        project=config.get("trackio_project", "flight-rebooking-sft"),
+        run_name=config.get("trackio_run_name", None),
         remove_unused_columns=False,
         dataloader_pin_memory=True,
         push_to_hub=True,

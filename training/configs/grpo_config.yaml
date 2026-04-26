@@ -26,7 +26,7 @@ lora_target_modules:
 num_train_epochs: 2
 per_device_train_batch_size: 1
 gradient_accumulation_steps: 16       # effective batch size = 16
-learning_rate: 5.0e-7                 # very low to avoid forgetting SFT knowledge
+learning_rate: 5.0e-6                 # standard GRPO from instruct model
 warmup_steps: 20
 bf16: true
 gradient_checkpointing: true
@@ -46,6 +46,11 @@ scale_rewards: true                   # normalize rewards within each group
 # Reward weights
 grader_reward_weight: 1.0             # primary signal: environment grader score
 efficiency_reward_weight: 0.5         # secondary: step efficiency bonus
+
+# Experiment tracking (trackio)
+report_to: "trackio"
+trackio_project: "flight-rebooking-grpo"
+# trackio_run_name: "run-1"            # auto-generated if omitted
 
 # vLLM acceleration (enable if vLLM is installed)
 use_vllm: false
