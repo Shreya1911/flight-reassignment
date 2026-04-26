@@ -30,15 +30,15 @@ if _PROJECT_ROOT not in sys.path:
 # ---------------------------------------------------------------------------
 
 DEFAULTS = {
-    "model_name": "checkpoints/sft/final",
+    "model_name": "/app/checkpoints/sft/final",
     "dataset_dir": "training/grpo_prompts",
-    "output_dir": "checkpoints/grpo",
+    "output_dir": "/app/checkpoints/grpo",
 
     # LoRA (smaller than SFT to reduce overfitting during RL)
     "lora_r": 16,
     "lora_alpha": 32,
     "lora_dropout": 0.05,
-    "lora_target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+    "lora_target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "down_proj"],
 
     # Training
     "num_train_epochs": 2,
@@ -108,8 +108,19 @@ def train(config: dict) -> None:
     from datasets import load_from_disk
     from peft import LoraConfig
     from trl import GRPOConfig, GRPOTrainer
+    from transformers import TrainerCallback
 
     from training.grpo_env import FlightRebookingGRPOEnv
+
+    # Fix cache permission error - point to writable directory
+    os.environ["HF_HOME"] = "/app/hf_cache"
+    os.environ["TRANSFORMERS_CACHE"] = "/app/hf_cache"
+
+    # Login without saving token to disk
+    hf_token = os.environ.get("HF_TOKEN")
+    if hf_token:
+        os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
+        os.environ["HF_TOKEN"] = hf_token
 
     # Load prompt dataset
     dataset_dir = config["dataset_dir"]
@@ -175,6 +186,12 @@ def train(config: dict) -> None:
           f"efficiency={config['efficiency_reward_weight']}")
     print(f"  LR: {config['learning_rate']}")
 
+    class LogCallback(TrainerCallback):
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            if logs:
+                print(f"Step {state.global_step}: {logs}", flush=True)
+                sys.stdout.flush()
+
     trainer = GRPOTrainer(
         model=config["model_name"],
         args=training_args,
@@ -183,6 +200,7 @@ def train(config: dict) -> None:
         train_dataset=dataset,
         peft_config=peft_config,
         environment_factory=FlightRebookingGRPOEnv,
+        callbacks=[LogCallback()],
     )
 
     # Train

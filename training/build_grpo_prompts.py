@@ -1,7 +1,8 @@
 """
 Build a prompt dataset for GRPO training.
 
-Each prompt is a conversation start: system message + initial task description.
+Each prompt is a plain-text conversation start matching the format the SFT
+model was trained on: <|system|> + <|user|> with explicit delimiters.
 The environment_factory handles the actual environment interaction during training.
 
 Usage:
@@ -22,13 +23,14 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from inference import SYSTEM_PROMPT
+from training.build_sft_dataset import ROLE_SYSTEM, ROLE_USER, ROLE_ASSISTANT, TURN_END
 
 
 # ---------------------------------------------------------------------------
 # Difficulty schedule (more varied than SFT to explore the full space)
 # ---------------------------------------------------------------------------
 
-DIFFICULTIES = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+DIFFICULTIES = [0.15, 0.25, 0.35, 0.50, 0.60, 0.75, 0.90]
 
 
 def build_prompt_dataset(
@@ -39,7 +41,7 @@ def build_prompt_dataset(
     Build a dataset of initial prompts for GRPO training.
 
     Each row has:
-        - prompt: list of messages (system + user)
+        - prompt: plain text string (system + user turn, same delimiters as SFT)
         - difficulty: float
         - seed: int
     """
@@ -55,18 +57,22 @@ def build_prompt_dataset(
         difficulty = DIFFICULTIES[i % len(DIFFICULTIES)]
         seed = i + 1
 
-        prompt_messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": (
-                "A flight has been cancelled. Rebook all passengers onto "
-                "alternative flights, respecting constraints and priorities.\n\n"
-                f"=== Step 0 | Episode seed: {seed} | Difficulty: {difficulty} ===\n\n"
-                "Call list_passengers to begin."
-            )},
-        ]
+        user_text = (
+            "A flight has been cancelled. Rebook all passengers onto "
+            "alternative flights, respecting constraints and priorities.\n\n"
+            f"=== Step 0 | Episode seed: {seed} | Difficulty: {difficulty} ===\n\n"
+            "Choose your next tool call. Respond with ONLY a JSON object."
+        )
+
+        # Plain text prompt matching SFT training format
+        prompt_text = (
+            f"{ROLE_SYSTEM}\n{SYSTEM_PROMPT}\n{TURN_END}\n"
+            f"{ROLE_USER}\n{user_text}\n{TURN_END}\n"
+            f"{ROLE_ASSISTANT}\n"
+        )
 
         rows.append({
-            "prompt": prompt_messages,
+            "prompt": prompt_text,
             "difficulty": difficulty,
             "seed": seed,
         })

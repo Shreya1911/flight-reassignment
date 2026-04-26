@@ -5,6 +5,9 @@ Public methods (except reset) are exposed as tools to the LLM.
 Each method must have type hints and Google-style docstrings
 for TRL's automatic tool schema extraction.
 
+Uses the same plain-text delimiters (<|user|>, <|assistant|>, <|end|>)
+as SFT training so the model sees consistent formatting.
+
 Usage:
     # In train_grpo.py:
     from training.grpo_env import FlightRebookingGRPOEnv
@@ -27,6 +30,7 @@ if _PROJECT_ROOT not in sys.path:
 
 from server.environment import FlightRebookingEnvironment
 from models import FlightRebookingAction
+from training.build_sft_dataset import ROLE_USER, ROLE_ASSISTANT, TURN_END
 
 
 class FlightRebookingGRPOEnv:
@@ -224,9 +228,23 @@ class FlightRebookingGRPOEnv:
         return "\n".join(parts)
 
     def _format_result(self, obs) -> str:
-        """Format tool result + state for the LLM."""
+        """
+        Format tool result + state as a user turn for the next step.
+
+        Uses the same <|user|>...<|end|> / <|assistant|> delimiters as SFT
+        so the model sees consistent formatting during GRPO training.
+        """
         parts = []
         if obs.tool_result:
-            parts.append(json.dumps(obs.tool_result, indent=2))
+            parts.append(f"Last tool result: {json.dumps(obs.tool_result, indent=2)}")
+        if obs.reward is not None:
+            parts.append(f"Reward: {obs.reward:.2f} ({obs.reward_reason})")
         parts.append(self._format_state(obs))
-        return "\n".join(parts)
+        parts.append("Choose your next tool call. Respond with ONLY a JSON object.")
+
+        user_content = "\n\n".join(parts)
+        return (
+            f"{TURN_END}\n"
+            f"{ROLE_USER}\n{user_content}\n{TURN_END}\n"
+            f"{ROLE_ASSISTANT}\n"
+        )

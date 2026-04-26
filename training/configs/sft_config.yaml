@@ -38,7 +38,7 @@ warmup_ratio: 0.10                    # longer warmup (was 0.05)
 weight_decay: 0.05                    # regularization (was 0)
 bf16: true
 gradient_checkpointing: true
-max_length: 8192                      # longer for reasoning+JSON (was 4096)
+max_length: 4096                      # longer for reasoning+JSON (was 4096)
 logging_steps: 10
 save_strategy: "steps"
 save_steps: 100

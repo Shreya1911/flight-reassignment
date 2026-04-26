@@ -7,9 +7,9 @@
 #   python -m training.train_grpo --config training/configs/grpo_config.yaml
 
 # Model (start from SFT checkpoint, not base model)
-model_name: "checkpoints/sft/final"
+model_name: "/app/checkpoints/sft/final"
 dataset_dir: "training/grpo_prompts"
-output_dir: "checkpoints/grpo"
+output_dir: "/app/checkpoints/grpo"
 
 # LoRA (smaller rank to reduce overfitting during RL)
 lora_r: 16
@@ -20,6 +20,7 @@ lora_target_modules:
   - "k_proj"
   - "v_proj"
   - "o_proj"
+  - "down_proj"
 
 # Training
 num_train_epochs: 2
