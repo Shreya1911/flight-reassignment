@@ -30,7 +30,7 @@ if _PROJECT_ROOT not in sys.path:
 # ---------------------------------------------------------------------------
 
 DEFAULTS = {
-    "model_name": "Qwen/Qwen3-4B",
+    "model_name": "Qwen/Qwen2.5-7B-Instruct",
     "dataset_dir": "training/grpo_prompts",
     "output_dir": "/app/checkpoints/grpo",
 
@@ -103,12 +103,50 @@ def efficiency_reward(environments, **kwargs):
 # Main training
 # ---------------------------------------------------------------------------
 
+
+# ---------------------------------------------------------------------------
+# Qwen2.5 response schema for tool-call parsing
+# Same <tool_call>...</tool_call> format as Qwen3, but without <think> tags.
+# TRL only auto-detects Qwen3/3.5 — we set this manually for Qwen2.5.
+# ---------------------------------------------------------------------------
+QWEN2_5_RESPONSE_SCHEMA = {
+    "x-regex": r"^(?P<content>.*?)(?:\n(?=<tool_call>))?(?=(?:<tool_call>|<\|im_end\|>|$))(?P<tool_calls>(?:<tool_call>.+?</tool_call>\s*)+)?\s*(?:<\|im_end\|>|$)",
+    "type": "object",
+    "properties": {
+        "role": {"const": "assistant"},
+        "content": {"type": "string"},
+        "tool_calls": {
+            "type": "array",
+            "x-regex-iterator": r"<tool_call>\s*(.+?)\s*</tool_call>",
+            "items": {
+                "x-parser": "json",
+                "x-parser-args": {"transform": "{type: 'function', function: @}"},
+                "type": "object",
+                "properties": {
+                    "type": {"const": "function"},
+                    "function": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "arguments": {
+                                "type": "object",
+                                "additionalProperties": {},
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    },
+}
+
+
 def train(config: dict) -> None:
     """Run GRPO training."""
     from datasets import load_from_disk
     from peft import LoraConfig
     from trl import GRPOConfig, GRPOTrainer
-    from transformers import TrainerCallback
+    from transformers import AutoTokenizer, TrainerCallback
 
     from training.grpo_env import FlightRebookingGRPOEnv
 
@@ -121,6 +159,19 @@ def train(config: dict) -> None:
     if hf_token:
         os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
         os.environ["HF_TOKEN"] = hf_token
+
+    # Load tokenizer and set response schema for Qwen2.5 models
+    # (TRL auto-detects Qwen3/3.5 but not Qwen2.5)
+    model_name = config["model_name"]
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name, padding_side="left", truncation_side="left",
+    )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    if "qwen2.5" in model_name.lower() or "qwen2" in model_name.lower():
+        print(f"  Setting Qwen2.5 response schema manually for tool-call parsing")
+        tokenizer.response_schema = QWEN2_5_RESPONSE_SCHEMA
 
     # Load prompt dataset
     dataset_dir = config["dataset_dir"]
@@ -195,11 +246,12 @@ def train(config: dict) -> None:
                 sys.stdout.flush()
 
     trainer = GRPOTrainer(
-        model=config["model_name"],
+        model=model_name,
         args=training_args,
         reward_funcs=reward_funcs,
         train_dataset=dataset,
         peft_config=peft_config,
+        processing_class=tokenizer,
         environment_factory=FlightRebookingGRPOEnv,
         callbacks=[LogCallback()],
     )
