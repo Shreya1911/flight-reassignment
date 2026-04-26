@@ -13,7 +13,7 @@ tags:
 
 # ✈️ Airline Flight Rebooking — OpenEnv Environment
 
-**Team Agentic Troop** · [HF Space](https://huggingface.co/spaces/vansh-ar-0-ra/seat-reassignment) · [GitHub](https://github.com/vansh-ar0ra/seat_reassignment)
+**Team Agentic Troop** · [HF Space](https://huggingface.co/spaces/Shreya1911/openenv-lfight-seat-env)
 
 An OpenEnv-compliant RL environment that simulates **airline flight rebooking after a flight cancellation** — a real operational task performed daily by airline operations centres. An agent must rebook all passengers from a cancelled flight onto alternative flights using 8 tool calls, respecting hard constraints (SSR compatibility, group integrity, connection deadlines), managing costs within a compensation budget, and treating loyalty members fairly across priority tiers.
 
