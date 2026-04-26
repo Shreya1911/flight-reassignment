@@ -6,8 +6,8 @@
 # Usage:
 #   python -m training.train_grpo --config training/configs/grpo_config.yaml
 
-# Model (instruct variant required — TRL needs tool-calling chat template)
-model_name: "Qwen/Qwen2.5-3B-Instruct"
+# Model (Qwen3 required — TRL needs tool-calling chat template with response schema)
+model_name: "Qwen/Qwen3-4B-Instruct-2507"
 dataset_dir: "training/grpo_prompts"
 output_dir: "/app/checkpoints/grpo"
 
