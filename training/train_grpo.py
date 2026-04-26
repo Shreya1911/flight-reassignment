@@ -45,7 +45,7 @@ DEFAULTS = {
     "per_device_train_batch_size": 1,
     "gradient_accumulation_steps": 16,
     "learning_rate": 5e-7,
-    "warmup_ratio": 0.05,
+    "warmup_steps": 20,
     "bf16": True,
     "gradient_checkpointing": True,
     "logging_steps": 5,
@@ -148,7 +148,7 @@ def train(config: dict) -> None:
         per_device_train_batch_size=config["per_device_train_batch_size"],
         gradient_accumulation_steps=config["gradient_accumulation_steps"],
         learning_rate=config["learning_rate"],
-        warmup_ratio=config["warmup_ratio"],
+        warmup_steps=config["warmup_steps"],
         bf16=config["bf16"],
         gradient_checkpointing=config["gradient_checkpointing"],
 
@@ -162,16 +162,18 @@ def train(config: dict) -> None:
         beta=config["beta"],
         scale_rewards=config["scale_rewards"],
 
+        # Reward weights (in GRPOConfig, not GRPOTrainer)
+        reward_weights=[
+            config["grader_reward_weight"],
+            config["efficiency_reward_weight"],
+        ],
+
         # Misc
         report_to="none",
     )
 
-    # Reward functions and weights
+    # Reward functions
     reward_funcs = [grader_reward, efficiency_reward]
-    reward_weights = [
-        config["grader_reward_weight"],
-        config["efficiency_reward_weight"],
-    ]
 
     # Create trainer
     print(f"\nInitializing GRPOTrainer...")
@@ -194,7 +196,6 @@ def train(config: dict) -> None:
         model=config["model_name"],
         args=training_args,
         reward_funcs=reward_funcs,
-        reward_weights=reward_weights,
         train_dataset=dataset,
         peft_config=peft_config,
         environment_factory=FlightRebookingGRPOEnv,
