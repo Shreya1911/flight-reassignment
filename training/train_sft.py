@@ -29,7 +29,7 @@ if _PROJECT_ROOT not in sys.path:
 # ---------------------------------------------------------------------------
 
 DEFAULTS = {
-    "model_name": "Qwen/Qwen3-4B-Instruct-2507",
+    "model_name": "Qwen/Qwen2.5-3B",
     "dataset_dir": "training/sft_dataset",
     "dataset_repo": "Shreya1911/flight-rebooking-sft-data_v2",
     "output_dir": "/app/checkpoints/sft",
@@ -57,8 +57,10 @@ DEFAULTS = {
     "save_steps": 100,
     "eval_strategy": "steps",
     "eval_steps": 100,
-    "assistant_only_loss": True,
     "packing": False,
+    # Dataset uses plain text format ({"text": "..."}) with explicit role
+    # delimiters, compatible with both base and instruct models.
+    "dataset_text_field": "text",
 }
 
 
@@ -145,7 +147,7 @@ def train(config: dict) -> None:
 
         # SFT-specific
         max_length=config["max_length"],
-        assistant_only_loss=config["assistant_only_loss"],
+        dataset_text_field=config.get("dataset_text_field", "text"),
         packing=config["packing"],
 
         # Misc
@@ -184,7 +186,7 @@ def train(config: dict) -> None:
           f"{config['per_device_train_batch_size'] * config['gradient_accumulation_steps']}")
     print(f"  LR: {config['learning_rate']}, weight_decay: {config.get('weight_decay', 0)}")
     print(f"  Max length: {config['max_length']}")
-    print(f"  Assistant-only loss: {config['assistant_only_loss']}")
+    print(f"  Dataset format: plain text (field='{config.get('dataset_text_field', 'text')}')")
 
     from transformers import TrainerCallback
 

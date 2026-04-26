@@ -14,7 +14,7 @@
 #   python -m training.train_sft --config training/configs/sft_config.yaml
 
 # Model
-model_name: "Qwen/Qwen3-4B-Instruct-2507"
+model_name: "Qwen/Qwen2.5-3B"
 dataset_dir: "training/sft_dataset"
 output_dir: "/app/checkpoints/sft"
 
@@ -47,6 +47,6 @@ save_steps: 100
 eval_strategy: "steps"
 eval_steps: 100
 
-# SFT-specific
-assistant_only_loss: true             # only train on reasoning+tool-call tokens
+# SFT-specific — plain text format with explicit role delimiters
+dataset_text_field: "text"            # each row has a "text" field (not "messages")
 packing: false                        # don't pack — episodes are multi-turn

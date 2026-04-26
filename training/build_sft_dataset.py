@@ -1,21 +1,25 @@
 """
 Build a HuggingFace Dataset from collected expert episodes for SFTTrainer.
 
-Converts episode JSON files into the conversational format expected by TRL:
-    {
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": observation_text},
-            {"role": "assistant", "content": '{"tool_name": "...", "args": {...}}'},
-            ...
-        ]
-    }
+Converts episode JSON files into plain-text format with explicit delimiters.
+This works with any model (base or instruct) — no chat_template required.
+
+Each training example is a single "text" field:
+    <|system|>
+    {SYSTEM_PROMPT}
+    <|user|>
+    {observation}
+    <|assistant|>
+    {reasoning}
+    {JSON action}
+    <|user|>
+    ...
 
 Usage:
     python -m training.build_sft_dataset \
         --episodes_dir data/sft_episodes \
         --output_dir training/sft_dataset \
-        --min_score 0.8
+        --min_score 0.7
 """
 
 from __future__ import annotations
@@ -64,34 +68,44 @@ def load_episodes(episodes_dir: str, min_score: float = 0.8) -> List[dict]:
     return episodes
 
 
-def episode_to_messages(episode: dict) -> List[dict]:
+# ---------------------------------------------------------------------------
+# Delimiters — simple tokens the base model learns to associate with roles.
+# These are NOT special tokens; they're literal strings in the text.
+# ---------------------------------------------------------------------------
+ROLE_SYSTEM = "<|system|>"
+ROLE_USER = "<|user|>"
+ROLE_ASSISTANT = "<|assistant|>"
+TURN_END = "<|end|>"
+
+
+def episode_to_text(episode: dict) -> str:
     """
-    Convert an episode dict to a list of chat messages.
+    Convert an episode dict to a single plain-text training string.
 
     Format:
-        [system, user, assistant, user, assistant, ..., assistant]
+        <|system|>\n{SYSTEM_PROMPT}\n<|end|>\n
+        <|user|>\n{observation}\n<|end|>\n
+        <|assistant|>\n{reasoning}\n{JSON action}\n<|end|>\n
+        <|user|>\n{tool result + state}\n<|end|>\n
+        <|assistant|>\n{reasoning}\n{JSON action}\n<|end|>\n
+        ...
 
-    The first user message contains the initial observation.
-    Subsequent user messages contain tool results + updated state.
-    Each assistant message is: reasoning text + newline + JSON tool call.
-
-    The reasoning makes the assistant tokens longer, more varied, and
-    contextual — preventing the near-instant memorization that occurs
-    when training on tiny bare JSON strings.
+    This works with any model (base or instruct). No chat_template needed.
+    The model learns to generate text between <|assistant|> and <|end|>.
     """
     turns = episode.get("turns", [])
     if not turns:
-        return []
+        return ""
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    parts = [f"{ROLE_SYSTEM}\n{SYSTEM_PROMPT}\n{TURN_END}"]
 
-    for i, turn in enumerate(turns):
-        # User message: the observation text
+    for turn in turns:
+        # User turn: the observation text
         obs_text = turn.get("observation_text", "")
         if obs_text:
-            messages.append({"role": "user", "content": obs_text})
+            parts.append(f"{ROLE_USER}\n{obs_text}\n{TURN_END}")
 
-        # Assistant message: reasoning + JSON action
+        # Assistant turn: reasoning + JSON action
         action = turn.get("action", {})
         action_json = json.dumps(action, separators=(",", ":"))
 
@@ -101,9 +115,9 @@ def episode_to_messages(episode: dict) -> List[dict]:
         else:
             assistant_content = action_json
 
-        messages.append({"role": "assistant", "content": assistant_content})
+        parts.append(f"{ROLE_ASSISTANT}\n{assistant_content}\n{TURN_END}")
 
-    return messages
+    return "\n".join(parts)
 
 
 def build_dataset(
@@ -142,18 +156,18 @@ def build_dataset(
         print("No episodes found. Run collect_sft_data.py first.")
         return
 
-    # Convert to messages format
+    # Convert to plain text format
     rows = []
     score_sum = 0.0
     difficulty_counts = {}
     quality_counts = {}
 
     for episode in episodes:
-        messages = episode_to_messages(episode)
-        if not messages:
+        text = episode_to_text(episode)
+        if not text:
             continue
 
-        rows.append({"messages": messages})
+        rows.append({"text": text})
 
         score_sum += episode.get("score", 0.0)
         diff = episode.get("difficulty", 0.5)
@@ -162,27 +176,16 @@ def build_dataset(
         quality = episode.get("quality", "unknown")
         quality_counts[quality] = quality_counts.get(quality, 0) + 1
 
-    print(f"  Converted {len(rows)} episodes to messages format")
+    print(f"  Converted {len(rows)} episodes to plain text format")
     print(f"  Avg score: {score_sum / len(rows):.4f}")
     print(f"  Difficulty distribution: {dict(sorted(difficulty_counts.items()))}")
     print(f"  Quality distribution: {quality_counts}")
 
-    # Message length stats
-    msg_counts = [len(r["messages"]) for r in rows]
-    print(f"  Messages per episode: min={min(msg_counts)}, "
-          f"max={max(msg_counts)}, avg={sum(msg_counts)/len(msg_counts):.1f}")
-
-    # Estimate assistant token stats (reasoning + JSON)
-    total_assistant_chars = 0
-    n_assistant_msgs = 0
-    for r in rows:
-        for m in r["messages"]:
-            if m["role"] == "assistant":
-                total_assistant_chars += len(m["content"])
-                n_assistant_msgs += 1
-    avg_assistant_chars = total_assistant_chars / max(1, n_assistant_msgs)
-    print(f"  Avg assistant message length: {avg_assistant_chars:.0f} chars "
-          f"(~{avg_assistant_chars / 4:.0f} tokens)")
+    # Text length stats
+    text_lengths = [len(r["text"]) for r in rows]
+    print(f"  Text length (chars): min={min(text_lengths)}, "
+          f"max={max(text_lengths)}, avg={sum(text_lengths)/len(text_lengths):.0f}")
+    print(f"  Estimated tokens: avg ~{sum(text_lengths)/len(text_lengths)/4:.0f}")
 
     # Build HF Dataset with train/eval split
     full_dataset = Dataset.from_list(rows)
