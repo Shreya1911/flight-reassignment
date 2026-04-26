@@ -31,7 +31,7 @@ if _PROJECT_ROOT not in sys.path:
 DEFAULTS = {
     "model_name": "Qwen/Qwen2.5-3B",
     "dataset_dir": "training/sft_dataset",
-    "dataset_repo": "Shreya1911/flight-rebooking-sft-data_v2",
+    "dataset_repo": "Shreya1911/flight-rebooking-sft-data_v3",
     "output_dir": "/app/checkpoints/sft",
 
     # LoRA — reduced capacity to prevent memorization
