@@ -280,6 +280,5 @@ class FlightRebookingGRPOEnv:
         if obs.reward is not None:
             parts.append(f"Reward: {obs.reward:.2f} ({obs.reward_reason})")
         parts.append(self._format_state(obs))
-        parts.append("Choose your next tool call. Respond with ONLY a JSON object.")
 
         return "\n\n".join(parts)
