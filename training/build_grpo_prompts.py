@@ -57,10 +57,10 @@ def build_prompt_dataset(
         seed = i + 1
 
         user_text = (
-            "A flight has been cancelled. Rebook all passengers onto "
+            "Task: A flight has been cancelled. Rebook all passengers onto "
             "alternative flights, respecting constraints and priorities.\n\n"
             f"=== Step 0 | Episode seed: {seed} | Difficulty: {difficulty} ===\n\n"
-            "Choose your next tool call."
+            "Choose your next tool call. Respond with ONLY a JSON object."
         )
 
         # Conversational prompt for TRL's GRPOTrainer

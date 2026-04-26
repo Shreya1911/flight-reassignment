@@ -198,25 +198,33 @@ class FlightRebookingGRPOEnv:
         return self._format_result(obs)
 
     def _format_state(self, obs) -> str:
-        """Format observation state as a string for the LLM."""
+        """
+        Format observation state — identical to inference.format_state()
+        so the model sees the same context during training and inference.
+        """
         parts = [
-            f"Step {obs.step_count}/{obs.max_steps} | "
+            f"=== Step {obs.step_count}/{obs.max_steps} | "
             f"Booked: {obs.passengers_booked}/{obs.passengers_total} | "
             f"Remaining: {obs.passengers_remaining} | "
-            f"Cost: ${obs.total_cost:.0f} (budget: ${obs.compensation_budget:.0f})"
+            f"Cost: ${obs.total_cost:.0f} (budget: ${obs.compensation_budget:.0f}) ==="
         ]
 
+        # Mid-episode events
         if obs.events:
             parts.append("\n** EVENTS THIS STEP **")
             for evt in obs.events:
                 parts.append(f"  [{evt['type']}] {evt.get('reason', '')}")
+                if evt["type"] == "secondary_cancellation" and "unbooked_passengers" in evt:
+                    parts.append(f"    Passengers unbooked: {evt['unbooked_passengers']}")
             parts.append("** Check bookings and adapt. **")
 
+        # Reward breakdown
         if obs.reward_breakdown:
             non_zero = {k: v for k, v in obs.reward_breakdown.items() if v != 0.0}
             if non_zero:
                 parts.append(f"\nReward breakdown: {non_zero}")
 
+        # Current bookings
         if obs.booked_summary:
             parts.append("\nCurrent bookings:")
             for b in obs.booked_summary:
@@ -224,17 +232,39 @@ class FlightRebookingGRPOEnv:
                     f"  {b['passenger_id']} -> {b['flight_id']} ({b['cabin']})"
                 )
 
+        # Flight availability snapshot
+        if obs.flights_snapshot:
+            parts.append("\nFlight availability:")
+            for fl in obs.flights_snapshot:
+                avail = ", ".join(
+                    f"{c}={n}" for c, n in fl["cabin_availability"].items() if n > 0
+                )
+                parts.append(
+                    f"  {fl['flight_id']} dep={fl['departure_time']} arr={fl['arrival_time']} "
+                    f"SSR={fl['supports_ssr']} [{avail}]"
+                )
+
+        # Remaining passenger tracking
+        if obs.passengers_remaining > 0 and obs.booked_summary:
+            booked_pids = {b["passenger_id"] for b in obs.booked_summary}
+            parts.append(f"\nBooked pids: {booked_pids}")
+            parts.append(f"\nStill need booking: {obs.passengers_remaining} passengers (checklist_passengers)")
+
         return "\n".join(parts)
 
     def _format_result(self, obs) -> str:
         """
-        Format tool result as a plain string.
+        Format tool result as a plain string — matches inference.format_result()
+        plus state and instruction appended.
 
         TRL handles wrapping this as a tool message via the chat template.
         """
         parts = []
         if obs.tool_result:
-            parts.append(json.dumps(obs.tool_result, indent=2))
+            parts.append(f"Last tool result: {json.dumps(obs.tool_result, indent=2)}")
+        if obs.reward is not None:
+            parts.append(f"Reward: {obs.reward:.2f} ({obs.reward_reason})")
         parts.append(self._format_state(obs))
+        parts.append("Choose your next tool call. Respond with ONLY a JSON object.")
 
         return "\n\n".join(parts)
