@@ -124,9 +124,13 @@ def train(config: dict) -> None:
 
     # Load prompt dataset
     dataset_dir = config["dataset_dir"]
-    print(f"Loading prompt dataset from {dataset_dir}...")
-    dataset = load_from_disk(dataset_dir)
-    print(f"  Dataset: {dataset}")
+    if "/" in dataset_dir and not os.path.exists(dataset_dir):
+        print(f"Loading prompt dataset from HF Hub: {dataset_dir}")
+        from datasets import load_dataset
+        dataset = load_dataset(dataset_dir, split="train")
+    else:
+        print(f"Loading prompt dataset from disk: {dataset_dir}")
+        dataset = load_from_disk(dataset_dir)
 
     # LoRA config
     peft_config = LoraConfig(
