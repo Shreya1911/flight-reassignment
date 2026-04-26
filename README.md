@@ -190,6 +190,10 @@ python -m training.build_sft_dataset --episodes_dir data/sft_episodes --min_scor
 python -m training.train_sft --config training/configs/sft_config.yaml
 ```
 
+**Training result** — loss drops from **0.9106 → 0.0743** (92% reduction) over 173 steps on 2,766 samples:
+
+![Qwen 2.5-3B training loss — 0.9106 → 0.0743](training_loss_chart.png)
+
 ### Phase 2: GRPO (Group Relative Policy Optimization)
 
 Reinforces the SFT-trained model against the live environment using the grader score as reward, teaching trade-off reasoning that static demonstrations cannot capture.
@@ -320,4 +324,4 @@ docker run -p 8000:8000 flight-rebooking
 - **`openenv.yaml`:** Present with spec version, runtime, and port configuration.
 - **Graders:** 3 tasks with deterministic graders returning scores in [0.0, 1.0].
 - **Dockerfile:** Builds and runs cleanly.
-- **HF Space:** Deployed and responding at [vansh-ar-0-ra/seat-reassignment](https://huggingface.co/spaces/vansh-ar-0-ra/seat-reassignment).
+- **HF Space:** Deployed and responding at [HF Space](https://huggingface.co/spaces/Shreya1911/openenv-lfight-seat-env/tree/main)
