@@ -32,6 +32,15 @@ dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",
 ]
+train = [
+    "trl>=1.2.0",
+    "peft>=0.13.0",
+    "transformers>=5.2.0",
+    "datasets>=3.0.0",
+    "accelerate>=1.0.0",
+    "trackio>=0.21.1",
+    "jmespath>=1.0.0",
+]
 
 [project.scripts]
 # Server entry point - enables running via: uv run --project . server
