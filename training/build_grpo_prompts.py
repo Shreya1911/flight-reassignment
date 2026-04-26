@@ -95,11 +95,11 @@ IMPORTANT:
 # Difficulty schedule (more varied than SFT to explore the full space)
 # ---------------------------------------------------------------------------
 
-DIFFICULTIES = [0.15, 0.25, 0.35, 0.50, 0.60, 0.75, 0.90]
+DIFFICULTIES = [0.25, 0.50, 0.75]
 
 
 def build_prompt_dataset(
-    n_prompts: int = 30,
+    n_prompts: int = 10,
     output_dir: str = "training/grpo_prompts",
 ) -> None:
     """
@@ -174,8 +174,8 @@ def main():
         description="Build GRPO prompt dataset"
     )
     parser.add_argument(
-        "--n_prompts", type=int, default=30,
-        help="Number of prompts to generate (default: 30)",
+        "--n_prompts", type=int, default=10,
+        help="Number of prompts to generate (default: 10)",
     )
     parser.add_argument(
         "--output_dir", type=str, default="training/grpo_prompts",
