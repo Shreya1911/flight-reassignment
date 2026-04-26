@@ -1,5 +1,5 @@
 ---
-title: Seat Reassignment Environment
+title: Flight Rebooking Environment
 emoji: ✈️
 colorFrom: blue
 colorTo: green
@@ -11,23 +11,23 @@ tags:
   - openenv
 ---
 
-# ✈️ Airline Seat Reassignment — OpenEnv Environment
+# ✈️ Airline Flight Rebooking — OpenEnv Environment
 
 **Team Agentic Troop** · [HF Space](https://huggingface.co/spaces/vansh-ar-0-ra/seat-reassignment) · [GitHub](https://github.com/vansh-ar0ra/seat_reassignment)
 
-An OpenEnv-compliant RL environment that simulates **airline seat reassignment after an aircraft swap** — a real operational task performed daily by airline ground staff. An agent must reassign all passengers from Aircraft-1 (AC-1) to Aircraft-2 (AC-2) using tool calls, respecting cabin class, paid window-seat preferences, and paid extra-legroom preferences depending on the difficulty level.
+An OpenEnv-compliant RL environment that simulates **airline flight rebooking after a flight cancellation** — a real operational task performed daily by airline operations centres. An agent must rebook all passengers from a cancelled flight onto alternative flights using 8 tool calls, respecting hard constraints (SSR compatibility, group integrity, connection deadlines), managing costs within a compensation budget, and treating loyalty members fairly across priority tiers.
 
 ---
 
 ## Motivation & Real-World Utility
 
-Aircraft swaps are a routine disruption in airline operations. When a scheduled aircraft is substituted, gate agents must manually reassign every passenger to the replacement aircraft's different seating layout while honouring cabin class, paid upgrades, and accessibility needs — all under time pressure. This environment models that exact task, making it directly useful for training and evaluating agents on constrained multi-step planning with heterogeneous passenger requirements.
+Flight cancellations are a routine disruption in airline operations. When a flight is cancelled, operations agents must rebook every passenger onto alternative flights with different capacity, SSR support, and timing — while respecting cabin class, group integrity requirements, connection deadlines, loyalty entitlements, and budget constraints, all under time pressure. This environment models that exact task, making it directly useful for training and evaluating agents on constrained multi-step planning with heterogeneous passenger requirements, trade-off reasoning, and mid-episode adaptation to dynamic events.
 
 ---
 
 ## Environment Overview
 
-Each episode begins with a set of passengers occupying seats on AC-1. The agent must move every passenger to an appropriate seat on AC-2 (which has a different layout) using three tools. The episode ends when all passengers are reassigned or the step limit is reached.
+Each episode begins with a set of passengers from a cancelled flight. The agent must rebook every passenger onto alternative flights using 8 tools. The episode ends when all passengers are booked, `finalize_plan` is called, or the step limit is reached.
 
 ### Action Space
 
@@ -35,115 +35,187 @@ The agent's action is a JSON object specifying one tool call per step:
 
 | Tool | Arguments | Description |
 |---|---|---|
-| `get_passenger_details` | `seat_id` | Inspect an AC-1 seat to learn the passenger's ID, cabin, and paid preferences. |
-| `assign_seat` | `passenger_id`, `target_seat_id` | Move a passenger from AC-1 to a specific empty AC-2 seat. Returns cabin match and preference satisfaction status. |
-| `swap_seats` | `passenger_id_1`, `passenger_id_2` | Swap two passengers who are both already assigned on AC-2. Useful for correcting earlier misplacements. |
+| `list_passengers` | — | Survey all passengers with summary info (ID, tier, group, SSR/deadline flags, loyalty). |
+| `get_passenger_details` | `passenger_id` | Full details for one passenger (cabin, SSR flags, deadline, loyalty, preferences). |
+| `list_alternative_flights` | — | All active flights with per-cabin availability, times, and SSR support. |
+| `get_flight_details` | `flight_id` | Details and current availability for one specific flight. |
+| `book_passenger` | `passenger_id`, `flight_id`, `cabin` | Book one passenger onto a flight/cabin. Validates SSR, deadline, capacity. |
+| `book_group` | `group_id`, `flight_id`, `cabin_assignments` | Book an entire group atomically onto one flight. |
+| `unbook_passenger` | `passenger_id` | Remove an existing booking, freeing the seat. Useful after mid-episode events. |
+| `finalize_plan` | — | End the episode and trigger final grading. |
 
-**Action format:** `{"tool_name": "assign_seat", "args": {"passenger_id": "PAX-001", "target_seat_id": "2A"}}`
+**Action format:** `{"tool_name": "book_passenger", "args": {"passenger_id": "PAX-001", "flight_id": "FL-201", "cabin": "business"}}`
 
 ### Observation Space
 
-After every `reset()` and `step()`, the agent receives a `SeatReassignmentObservation` containing:
+After every `reset()` and `step()`, the agent receives a `FlightRebookingObservation` containing:
 
-- **AC-1 and AC-2 layouts** — full seat configurations (cabin, seat type, legroom) for both aircraft.
-- **AC-1 seats still occupied** — passengers not yet moved.
-- **AC-2 seat assignments** — current mapping of AC-2 seats to passengers.
-- **AC-2 seats available** — empty seats on AC-2.
-- **Tool result** — structured output from the last tool call (success/error, cabin match, preference satisfaction).
-- **Step-level feedback** — `reward`, `reward_reason`, `step_count`, `max_steps`, `cumulative_reward`, `passengers_remaining`.
+- **Counters** — `passengers_total`, `passengers_booked`, `passengers_remaining`.
+- **Tool result** — structured output from the last tool call (success/error, cabin match, booking cost).
+- **Step feedback** — `reward`, `reward_reason`, `step_count`, `max_steps`, `cumulative_reward`.
+- **Booked summary** — current bookings: `[{passenger_id, flight_id, cabin}]`.
+- **Flights snapshot** — current availability (populated after `list_alternative_flights` is called).
+- **Reward breakdown** — per-component deltas (coverage, cabin match, group, deadline, SSR, cost, loyalty, opportunity cost).
+- **Mid-episode events** — capacity changes, new passengers, SSR failures, deadline shifts, secondary cancellations.
+- **Cost tracking** — `total_cost` incurred and `compensation_budget` remaining.
 
-All models are typed Pydantic classes (`SeatReassignmentAction`, `SeatReassignmentObservation`, `SeatReassignmentState`) inheriting from OpenEnv base types.
+All models are typed Pydantic classes (`FlightRebookingAction`, `FlightRebookingObservation`, `FlightRebookingState`) inheriting from OpenEnv base types.
+
+---
+
+## Constraint Hierarchy
+
+The agent must balance multiple constraint types in priority order:
+
+1. **Hard constraints** (must not violate): SSR compatibility, hard group integrity, downstream deadlines.
+2. **Coverage**: every passenger should be rebooked.
+3. **Cost efficiency**: stay within the compensation budget; avoid unnecessary upgrades.
+4. **Loyalty compliance**: protect gold/silver members from downgrades.
+5. **Cabin matching**: place passengers in their original cabin class.
+6. **Priority tiers**: tier 1 (highest) passengers get better outcomes in trade-offs.
+7. **Soft group integrity**: keep soft groups together when possible.
 
 ---
 
 ## Task Difficulty Design
 
-The environment provides **3 tasks: easy, medium, and hard**. A critical design choice is that **difficulty is not introduced by varying the user-facing prompt** — the core instruction to the agent remains the same (reassign all passengers from AC-1 to AC-2). Instead, **difficulty is driven entirely by the underlying data**: the number of passengers, the number and type of constraints encoded in the passenger records, and the scarcity of qualifying seats on AC-2. The agent's system prompt guides it to account for whatever constraints it discovers in the data, but it is the data itself that defines how challenging each task is.
+The environment provides **3 static tasks (easy, medium, hard)** plus **procedural generation** via seed for unlimited episodes. Difficulty is driven entirely by the underlying data — the number of passengers, constraint density, capacity scarcity, and adversarial patterns — not by varying the prompt.
 
-### Easy — Cabin Match Only
+### Easy
 
 | Attribute | Value |
 |---|---|
 | Passengers | 8 |
-| AC-2 seats | 10 |
-| Max steps | 24 |
-| Constraints | Cabin class only (business → business, economy → economy) |
-| Passenger preferences | None — no `paid_window` or `paid_legroom` flags are set |
-| Tools available | `get_passenger_details`, `assign_seat` |
-| Grader | `grader_score = cabin_score` |
+| Max steps | 20 |
+| Compensation budget | $5,000 |
+| Constraints | Low: few SSR flags, no hard groups, relaxed deadlines |
+| Mid-episode events | Disabled |
 
-The data contains 8 passengers with no paid preferences. The agent simply needs to respect cabin class boundaries. There is seat surplus on AC-2 (10 seats for 8 passengers), making the task straightforward.
-
-### Medium — Cabin + Window Preferences
+### Medium
 
 | Attribute | Value |
 |---|---|
-| Passengers | 20 |
-| AC-2 seats | 24 |
-| Max steps | 60 |
-| Constraints | Cabin class + paid window-seat preferences |
-| Passenger preferences | A subset of passengers have `paid_window=True` |
-| Tools available | `get_passenger_details`, `assign_seat`, `swap_seats` |
-| Grader | `grader_score = (cabin_score + preference_score) / 2` |
+| Passengers | 15 |
+| Max steps | 35 |
+| Compensation budget | $4,000 |
+| Constraints | Moderate: SSR requirements, groups, deadlines, loyalty tiers |
+| Mid-episode events | Disabled |
 
-The data now includes 20 passengers, some of whom have paid for window seats. The agent must learn each passenger's preferences (via `get_passenger_details`) and plan assignments so that paid-window passengers land on window seats — while still respecting cabin class. The `swap_seats` tool becomes available to correct mistakes.
-
-### Hard — Cabin + Window + Legroom Preferences
+### Hard
 
 | Attribute | Value |
 |---|---|
-| Passengers | 20 |
-| AC-2 seats | 24 |
-| Max steps | 60 |
-| Constraints | Cabin class + paid window + paid extra legroom |
-| Passenger preferences | 6 with `paid_window`, 6 with `paid_legroom`, 2 with both |
-| Tools available | `get_passenger_details`, `assign_seat`, `swap_seats` |
-| Grader | `grader_score = (cabin_score + preference_score) / 2`, where `preference_score` averages across both window and legroom dimensions |
+| Passengers | 25 |
+| Max steps | 55 |
+| Compensation budget | $5,000 |
+| Constraints | High: dense SSRs, hard groups, tight deadlines, capacity scarcity |
+| Mid-episode events | Disabled (enabled in procedural mode) |
 
-The data introduces a second preference dimension (`paid_legroom`) and a deliberate scarcity constraint: AC-2 has **only 3 economy legroom seats** for 3 economy legroom-paying passengers, and legroom rows are in **different positions** between AC-1 and AC-2 (row 1 on AC-1 vs. row 2 on AC-2 for business; row 3 on AC-1 vs. seats 4A/4B/4H on AC-2 for economy). The agent must plan assignments carefully — wasting a scarce legroom seat on a non-paying passenger makes it impossible to achieve a perfect score. Two passengers have *both* `paid_window` and `paid_legroom`, requiring intersection of window-type and legroom-equipped seats — a genuine combinatorial planning challenge.
+### Procedural Generation
+
+For training at scale, pass a `seed` to `reset()` to generate unlimited unique episodes with configurable difficulty (0.0–1.0). At higher difficulty, the generator injects adversarial patterns:
+
+- **Greedy traps** — the "obvious" best flight has scarce seats for critical passengers.
+- **Distractor flights** — high-capacity flights with no SSR support.
+- **Priority inversion** — low-tier passengers with rare SSR requirements.
+- **Pareto conflicts** — no assignment simultaneously satisfies all constraints.
+- **Mid-episode events** — capacity changes, new passengers, SSR failures, deadline shifts, secondary cancellations.
 
 ---
 
 ## Reward Design
 
-The reward function provides **per-step signal**, not just end-of-episode scores:
+The reward function provides **per-step shaping signal** with progressive difficulty scaling:
 
 | Event | Reward | Notes |
 |---|---|---|
-| Correct cabin + all preferences satisfied | +0.35 | Best per-assignment outcome |
-| Correct cabin + no preferences applicable | +0.20 | Passenger had no paid prefs |
-| Correct cabin + preferences missed | +0.10 | Cabin right, but pref not honoured |
-| Cabin mismatch | −0.10 | Business ↔ economy violation |
-| Successful improvement swap | +0.25 | Swap increased constraint satisfaction |
-| Neutral / worsening swap | −0.05 / −0.15 | Discourages pointless or harmful swaps |
-| Redundant fetch | −0.05 | Re-querying an already-fetched seat |
-| Error (invalid seat, bad args, etc.) | −0.10 to −0.40 | Penalises clearly undesirable actions |
-| Incomplete assignment at episode end | −1.0 | Strong penalty for leaving passengers unassigned |
+| Booking: same cabin | +0.30 × priority weight | Best per-booking outcome |
+| Booking: cabin upgrade | +0.10 × priority weight | Acceptable but costs money |
+| Booking: cabin downgrade | −0.02 × priority weight | Least desirable |
+| Booking: deadline met bonus | +0.05 × priority weight | Connection preserved |
+| Hard group violation | −0.30 | Booking individual from a hard group |
+| Failed booking | −0.50 | Invalid action (no seats, SSR mismatch, etc.) |
+| Group booking (same cabin) | Sum of per-member rewards | Atomic group placement |
+| Unbook passenger | −0.05 | Disruption cost (partially offset if event-driven) |
+| Invalid tool | −0.20 | Unrecognized tool name |
+| Repeated identical call (>2x) | −0.05 | Penalizes stuck loops |
 
-**Terminal reward** is a weighted combination of cabin correctness (weight 1.5), preference satisfaction (weight 1.0), and step efficiency (weight 0.5), providing a rich multi-dimensional signal.
+**Decomposed reward breakdown** is returned per step with component deltas: `coverage_delta`, `cabin_match_delta`, `group_delta`, `deadline_delta`, `ssr_delta`, `cost_delta`, `loyalty_delta`, `opportunity_cost`.
+
+**Opportunity cost signaling**: when a booking consumes the last seat on an SSR-compatible flight that other constrained passengers need, a penalty is applied and explained.
 
 ---
 
 ## Grader
 
-Each task has a deterministic grader producing a score in **[0.0, 1.0]**:
+Each task has a deterministic grader producing a score in **[0.0, 1.0]** from 7 weighted components:
 
-- **Easy:** `grader_score = cabin_score` (fraction of passengers in the correct cabin).
-- **Medium/Hard:** `grader_score = (cabin_score + preference_score) / 2`, where `preference_score` averages across all active preference dimensions (window, and legroom if applicable). Unassigned passengers count as unsatisfied for both components.
+| Component | Weight | Description |
+|---|---|---|
+| Coverage | 0.25 | Fraction of passengers booked |
+| Cabin match | 0.15 | Priority-weighted cabin correctness |
+| Group integrity | 0.12 | Groups kept together on same flight |
+| Deadline compliance | 0.13 | Priority-weighted deadline satisfaction |
+| SSR integrity | 0.15 | No SSR violations (hard constraint) |
+| Cost efficiency | 0.10 | Budget adherence + per-passenger cost |
+| Loyalty compliance | 0.10 | Gold/silver members not downgraded |
 
-The grader is deterministic and reproducible — given the same assignment state, it always returns the same score.
+**Hard-constraint penalty**: each SSR violation or hard group split subtracts 0.15 from the final score.
+
+The grader is deterministic and reproducible — given the same booking state, it always returns the same score.
 
 ---
 
-## Baseline Scores
+## Training Pipeline
 
-| Task | Model | Grader Score |
-|---|---|---|
-| Easy | Gemini 2.5 Pro | **1.00** |
-| Medium | Gemini 2.5 Pro | **1.00** |
-| Hard | Gemini 2.5 Pro | **0.96** |
+The repository includes a complete **SFT + GRPO training pipeline** for fine-tuning a language model (Qwen2.5) to solve the rebooking task:
 
-Produced by `inference.py` using the OpenAI-compatible client.
+### Phase 1: Supervised Fine-Tuning (SFT)
+
+1. **Expert policy** (`training/expert_policy.py`) — a greedy-optimal solver that generates expert trajectories with chain-of-thought reasoning explaining each decision.
+2. **Data collection** (`training/collect_sft_data.py`) — runs the expert across thousands of procedurally generated episodes at 7 difficulty levels, collecting trajectories as JSON.
+3. **Dataset building** (`training/build_sft_dataset.py`) — converts episode JSONs into a HuggingFace Dataset in plain-text format with role delimiters.
+4. **SFT training** (`training/train_sft.py`) — fine-tunes Qwen2.5 with LoRA using TRL's `SFTTrainer`.
+
+```bash
+# Collect expert trajectories
+python -m training.collect_sft_data --n_episodes 3000
+
+# Build HF dataset
+python -m training.build_sft_dataset --episodes_dir data/sft_episodes --min_score 0.7
+
+# Train
+python -m training.train_sft --config training/configs/sft_config.yaml
+```
+
+### Phase 2: GRPO (Group Relative Policy Optimization)
+
+Reinforces the SFT-trained model against the live environment using the grader score as reward, teaching trade-off reasoning that static demonstrations cannot capture.
+
+1. **Prompt dataset** (`training/build_grpo_prompts.py`) — generates initial prompts for GRPO training across varied difficulties.
+2. **Environment wrapper** (`training/grpo_env.py`) — TRL-compatible environment with typed tool methods and Google-style docstrings for automatic schema extraction.
+3. **GRPO training** (`training/train_grpo.py`) — trains with dual reward functions (grader score + step efficiency).
+
+```bash
+# Build GRPO prompts
+python -m training.build_grpo_prompts --n_prompts 5000
+
+# Train
+python -m training.train_grpo --config training/configs/grpo_config.yaml
+```
+
+### Evaluation
+
+```bash
+# Evaluate expert policy
+python -m training.eval --expert --n_episodes 50
+
+# Evaluate a trained model
+python -m training.eval --model checkpoints/grpo/final --procedural --n_episodes 50
+
+# Compare base vs SFT vs GRPO
+python -m training.eval --model Qwen/Qwen2.5-7B-Instruct --compare checkpoints/sft/final checkpoints/grpo/final
+```
 
 ---
 
@@ -154,6 +226,19 @@ Produced by `inference.py` using the OpenAI-compatible client.
 - Python 3.10+
 - [uv](https://github.com/astral-sh/uv) (recommended for dependency management)
 - Docker (for containerised execution)
+
+### Install Dependencies
+
+```bash
+# Core dependencies
+uv sync
+
+# With training dependencies
+uv sync --extra train
+
+# With dev dependencies (testing)
+uv sync --extra dev
+```
 
 ### 1. Start the Environment Server
 
@@ -169,19 +254,19 @@ Set the required environment variables and run:
 
 ```bash
 export API_BASE_URL="https://router.huggingface.co/v1"
-export MODEL_NAME="Qwen/Qwen2.5-72B-Instruct"
+export MODEL_NAME="Qwen/Qwen2.5-7B-Instruct"
 export HF_TOKEN="your_hf_token_here"
 
 python inference.py
 ```
 
-The script uses the **OpenAI client** to call the LLM, runs all 3 tasks (easy, medium, hard), and outputs grader scores.
+The script uses the **OpenAI client** to call the LLM, runs all 3 tasks (easy, medium, hard), and outputs grader scores. Results are saved to the `results/` directory.
 
 ### 3. Docker
 
 ```bash
-docker build -t seat-reassignment .
-docker run -p 8000:8000 seat-reassignment
+docker build -t flight-rebooking .
+docker run -p 8000:8000 flight-rebooking
 ```
 
 ---
@@ -191,29 +276,44 @@ docker run -p 8000:8000 seat-reassignment
 ```
 ├── inference.py              # Baseline inference script (OpenAI client, all 3 tasks)
 ├── models.py                 # Typed Pydantic models (Action, Observation, State)
+├── client.py                 # OpenEnv WebSocket client for the environment
 ├── openenv.yaml              # OpenEnv spec metadata
 ├── Dockerfile                # Containerised deployment
 ├── pyproject.toml            # Dependencies and package config
-├── client/                   # WebSocket client for interacting with the environment
 ├── server/
 │   ├── app.py                # FastAPI application
-│   ├── environment.py        # Core environment logic (reset, step, state)
-│   ├── tools.py              # Tool implementations (get_passenger_details, assign_seat, swap_seats)
-│   └── rewards.py            # Reward computation and grader
+│   ├── environment.py        # Core environment logic (reset, step, state, events)
+│   ├── tools.py              # 8 tool implementations with validation chains
+│   └── rewards.py            # 3-layer reward system + 7-component grader
 ├── data/
-│   ├── easy/                 # 8 passengers, no preferences
-│   ├── medium/               # 20 passengers, window preferences
-│   └── hard/                 # 20 passengers, window + legroom preferences
-└── tests/
-    ├── test_environment.py   # Integration tests for all 3 tasks
-    └── test_rewards.py       # Unit tests for reward and grader logic
+│   ├── generate.py           # Procedural episode generator (adversarial + Pareto conflicts)
+│   ├── easy/                 # 8 passengers, low constraint density
+│   ├── medium/               # 15 passengers, moderate constraints
+│   └── hard/                 # 25 passengers, high constraints + scarcity
+├── training/
+│   ├── expert_policy.py      # Greedy-optimal solver with chain-of-thought reasoning
+│   ├── collect_sft_data.py   # Expert trajectory collection across difficulty levels
+│   ├── build_sft_dataset.py  # Convert episodes to HF Dataset for SFTTrainer
+│   ├── train_sft.py          # SFT training script (LoRA + TRL)
+│   ├── build_grpo_prompts.py # GRPO prompt dataset builder
+│   ├── grpo_env.py           # TRL-compatible environment wrapper for GRPO
+│   ├── train_grpo.py         # GRPO training script (dual reward functions)
+│   ├── eval.py               # Evaluation across tiers with comparison support
+│   ├── grpo_prompts/         # Pre-built GRPO prompt dataset
+│   └── configs/
+│       ├── sft_config.yaml   # SFT hyperparameters
+│       └── grpo_config.yaml  # GRPO hyperparameters
+├── tests/
+│   ├── test_environment.py   # Integration tests for all 3 tasks
+│   └── test_rewards.py       # Unit tests for reward and grader logic
+└── validate-submission.sh    # Submission validation script
 ```
 
 ---
 
 ## OpenEnv Spec Compliance
 
-- **Typed models:** `SeatReassignmentAction`, `SeatReassignmentObservation`, `SeatReassignmentState` — all Pydantic classes extending OpenEnv base types.
+- **Typed models:** `FlightRebookingAction`, `FlightRebookingObservation`, `FlightRebookingState` — all Pydantic classes extending OpenEnv base types.
 - **Endpoints:** `step(action)`, `reset(task_id)`, `state()` — fully implemented.
 - **`openenv.yaml`:** Present with spec version, runtime, and port configuration.
 - **Graders:** 3 tasks with deterministic graders returning scores in [0.0, 1.0].
