@@ -7,8 +7,8 @@
 #   python -m training.train_grpo --config training/configs/grpo_config.yaml
 
 # Model (start from SFT checkpoint, not base model)
-model_name: "/app/checkpoints/sft/final"
-dataset_dir: "training/grpo_prompts"
+model_name: "Qwen/Qwen2.5-3B"
+dataset_dir: "Shreya1911/flight-rebooking-grpo-data"
 output_dir: "/app/checkpoints/grpo"
 
 # LoRA (smaller rank to reduce overfitting during RL)
