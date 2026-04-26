@@ -3,8 +3,17 @@
   "description": "",
   "features": {
     "prompt": {
-      "dtype": "string",
-      "_type": "Value"
+      "feature": {
+        "role": {
+          "dtype": "string",
+          "_type": "Value"
+        },
+        "content": {
+          "dtype": "string",
+          "_type": "Value"
+        }
+      },
+      "_type": "List"
     },
     "difficulty": {
       "dtype": "float64",

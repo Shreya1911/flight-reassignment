@@ -6,8 +6,8 @@
 # Usage:
 #   python -m training.train_grpo --config training/configs/grpo_config.yaml
 
-# Model (start from SFT checkpoint, not base model)
-model_name: "Qwen/Qwen2.5-3B"
+# Model (instruct variant required — TRL needs tool-calling chat template)
+model_name: "Qwen/Qwen2.5-3B-Instruct"
 dataset_dir: "training/grpo_prompts"
 output_dir: "/app/checkpoints/grpo"
 

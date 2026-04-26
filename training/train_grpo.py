@@ -30,7 +30,7 @@ if _PROJECT_ROOT not in sys.path:
 # ---------------------------------------------------------------------------
 
 DEFAULTS = {
-    "model_name": "/app/checkpoints/sft/final",
+    "model_name": "Qwen/Qwen2.5-3B-Instruct",
     "dataset_dir": "training/grpo_prompts",
     "output_dir": "/app/checkpoints/grpo",
 
